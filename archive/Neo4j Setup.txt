@@ -1,0 +1,49 @@
+# Install the Neo4j GraphQL library and its peer dependencies with npm.
+npm install @neo4j/graphql graphql neo4j-driver @apollo/server
+
+# Connect to the Neo4j server via neo4j.driver()
+import neo4j from "neo4j-driver";
+
+const driver = neo4j.driver(
+    "neo4j+s://e3ef3e92.databases.neo4j.io",
+    neo4j.auth.basic("neo4j", "_irZcZW9qMFxJ-kWwosj1B8Ym0rnRhCNzYNePndvMqE")
+);
+
+$env:NEO4J_URI="neo4j+s://e3ef3e92.databases.neo4j.io"
+$env:NEO4J_USER="neo4j"
+$env:NEO4J_PASSWORD="_irZcZW9qMFxJ-kWwosj1B8Ym0rnRhCNzYNePndvMqE"
+node .\neo4j-test.mjs
+
+# nodes and relationships mapping Neo4jGraphQL
+import { Neo4jGraphQL } from "@neo4j/graphql";
+
+const typeDefs = `#graphql
+    type Movie @node {
+        title: String
+        actors: [Actor!]! @relationship(type: "ACTED_IN", direction: IN)
+    }    $env:NEO4J_URI="neo4j+s://e3ef3e92.databases.neo4j.io"
+    $env:NEO4J_USER="neo4j"
+    $env:NEO4J_PASSWORD="<your_password_here>"
+    node neo4j-test.mjs
+
+    type Actor @node {
+        name: String
+        movies: [Movie!]! @relationship(type: "ACTED_IN", direction: OUT)
+    }
+`;
+
+const neoSchema = new Neo4jGraphQL({ typeDefs, driver });
+
+# Apollo server
+import { ApolloServer } from '@apollo/server';
+import { startStandaloneServer } from '@apollo/server/standalone';
+
+const server = new ApolloServer({
+    schema: await neoSchema.getSchema(),
+});
+
+const { url } = await startStandaloneServer(server, {
+    listen: { port: 4000 },
+});
+
+console.log(`🚀 Server ready at ${url}`);

@@ -1,0 +1,30 @@
+{
+  "name": "neo4j-memory-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for hippocampal memory consolidation with Neo4j and semantic search",
+  "type": "module",
+  "main": "hippocampal-mcp-server.mjs",
+  "scripts": {
+    "start": "node hippocampal-mcp-server.mjs",
+    "start:remote": "node remote-mcp-server.mjs",
+    "setup-schema": "node setup-vector-index.mjs",
+    "test": "node test-mcp-server.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "neo4j",
+    "memory",
+    "embeddings",
+    "semantic-search"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "neo4j-driver": "^5.26.0",
+    "openai": "^4.77.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  }
+}
