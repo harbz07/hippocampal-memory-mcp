@@ -485,7 +485,7 @@ export async function handleSearchEvents(args, startTime, driver, openai) {
     } = args;
 
     let cypherQuery = 'MATCH (e:Event)';
-    const params = { limit };
+    const params = { limit: parseInt(limit) || 10 };
     const whereClauses = [];
 
     // Temporal filter
