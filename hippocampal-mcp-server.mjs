@@ -21,6 +21,7 @@ import {
 import neo4j from 'neo4j-driver';
 import OpenAI from 'openai';
 import { randomUUID } from 'crypto';
+import { hippocampusTools, handleWriteEvent, handleWriteReflection, handleSearchEvents } from './hippocampus-extension.mjs';
 
 // Environment validation
 const { NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, OPENAI_API_KEY } = process.env;
@@ -65,6 +66,7 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
+      ...hippocampusTools,
       {
         name: 'encode_memory',
         description: 'Create episodic memory event with emotional valence, temporal context, and entity involvement. Automatically generates embeddings for semantic retrieval.',
@@ -310,21 +312,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     switch (request.params.name) {
+      case 'hippocampus_write_event':
+        return await handleWriteEvent(request.params.arguments, startTime, driver);
+
+      case 'hippocampus_write_reflection':
+        return await handleWriteReflection(request.params.arguments, startTime, driver);
+
+      case 'hippocampus_search_events':
+        return await handleSearchEvents(request.params.arguments, startTime, driver, openai);
+
       case 'encode_memory':
         return await handleEncodeMemory(request.params.arguments, startTime);
-      
+
       case 'recall_memory':
         return await handleRecallMemory(request.params.arguments, startTime);
-      
+
       case 'mutate_graph':
         return await handleMutateGraph(request.params.arguments, startTime);
-      
+
       case 'evolve_bond':
         return await handleEvolveBond(request.params.arguments, startTime);
-      
+
       case 'query_graph':
         return await handleQueryGraph(request.params.arguments, startTime);
-      
+
       default:
         throw new Error(`Unknown tool: ${request.params.name}`);
     }
