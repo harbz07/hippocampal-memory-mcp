@@ -859,11 +859,26 @@ return result.records;
 
 ### Project Files Reference
 
-- **[neo4j-setup.mjs](c:\Users\harve\Neo4j\neo4j-setup.mjs)**: Apollo Server + Neo4j GraphQL integration with environment-based credentials
-- **[setup-schema.mjs](c:\Users\harve\Neo4j\setup-schema.mjs)**: Constraint and index creation patterns
-- **[graph_database_connector.js](c:\Users\harve\Neo4j\graph_database_connector.js)**: Basic driver initialization example
-- **[neo4j-test.mjs](c:\Users\harve\Neo4j\neo4j-test.mjs)**: Connection test script
-- **[claude-memory-server.mjs](c:\Users\harve\Neo4j\claude-memory-server.mjs)**: Claude memory integration (current context)
+#### Active MCP Server (Current Architecture)
+- **[hippocampal-mcp-server.mjs](c:\Users\harve\Neo4j\hippocampal-mcp-server.mjs)**: Main MCP server providing memory tools to Claude
+  - Implements context pattern with dependency injection (`{ driver, openai, generateEmbedding }`)
+  - Tools: `encode_memory`, `recall_memory`, `mutate_graph`, `evolve_bond`, `query_graph`
+  - Uses OpenAI embeddings for semantic search via vector similarity
+  - Handles both extension tools and local handlers
+- **[hippocampus-extension.mjs](c:\Users\harve\Neo4j\hippocampus-extension.mjs)**: Extended memory tools with biomimetic schema
+  - Tools: `hippocampus_write_event`, `hippocampus_write_reflection`, `hippocampus_search_events`
+  - Follows Who/Why/What/Where/Effects event structure
+  - All handlers receive `context` object for dependency injection
+- **[setup-vector-index.mjs](c:\Users\harve\Neo4j\setup-vector-index.mjs)**: Vector index creation for semantic memory retrieval
+- **[test-connection.mjs](c:\Users\harve\Neo4j\test-connection.mjs)**: Connection validation script
+- **[test-tunnel.mjs](c:\Users\harve\Neo4j\test-tunnel.mjs)**: Cloudflare tunnel testing
+
+#### Archive (Legacy/Reference)
+- **[archive/neo4j-setup.mjs](c:\Users\harve\Neo4j\archive\neo4j-setup.mjs)**: Apollo Server + Neo4j GraphQL integration example
+- **[archive/setup-schema.mjs](c:\Users\harve\Neo4j\archive\setup-schema.mjs)**: Constraint and index creation patterns
+- **[archive/graph_database_connector.js](c:\Users\harve\Neo4j\archive\graph_database_connector.js)**: Basic driver initialization example
+- **[archive/neo4j-test.mjs](c:\Users\harve\Neo4j\archive\neo4j-test.mjs)**: Legacy connection test
+- **[archive/claude-memory-server.mjs](c:\Users\harve\Neo4j\archive\claude-memory-server.mjs)**: Previous memory server iteration
 
 ### Environment Setup
 
@@ -872,20 +887,123 @@ All Neo4j connections require these environment variables in `.env`:
 NEO4J_URI=neo4j+s://xxx.databases.neo4j.io
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_password_here
-JWT_SECRET=your_jwt_secret_here  # For auth-enabled GraphQL
+OPENAI_API_KEY=sk-xxx  # Required for embedding generation
 ```
+
+### Current Architecture Pattern: Context Injection
+
+The workspace uses a **dependency injection pattern** via context objects for cleaner testability and explicit dependencies:
+
+**Server Pattern (hippocampal-mcp-server.mjs)**:
+```javascript
+// 1. Initialize clients once at startup
+const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+// 2. Create shared context object
+const context = {
+  driver,
+  openai,
+  generateEmbedding: async (text) => {
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text,
+    });
+    return response.data[0].embedding;
+  },
+};
+
+// 3. Pass context to all handlers
+case 'encode_memory':
+  return await handleEncodeMemory(request.params.arguments, startTime, context);
+```
+
+**Handler Pattern (local and extension handlers)**:
+```javascript
+// Handlers receive context and destructure what they need
+export async function handleEncodeMemory(args, startTime, context) {
+  const { driver, generateEmbedding } = context;
+  const session = driver.session();
+  // ... use driver and generateEmbedding
+}
+
+export async function handleWriteEvent(args, startTime, context) {
+  const { driver } = context;
+  const session = driver.session();
+  // ... use driver
+}
+```
+
+**Benefits**:
+- ✅ Explicit dependencies (no hidden module-level coupling)
+- ✅ Easy to test (pass mock context)
+- ✅ Consistent pattern across all handlers
+- ✅ Simple to extend (add new services to context)
 
 **Connection patterns**:
 - Local: `neo4j://localhost:7687` (non-TLS)
 - Aura/Cloud: `neo4j+s://xxx.databases.neo4j.io` (TLS required)
 - Self-signed cert: `neo4j+ssc://` (TLS with self-signed cert)
 
+### Memory Schema (Hippocampal System)
+
+The workspace implements a neuroanatomically-inspired memory system using Neo4j:
+
+**Core Node Types**:
+- `Event`: Episodic memories with temporal context, emotional valence, significance
+- `Person` / `Agent`: Participants in events
+- `Entity`: Non-human artifacts (projects, concepts, frameworks)
+- `Place`: Physical or conceptual locations
+- `Catalyst`: Motivations/reasons for events
+- `Effect`: Outcomes with emotional weighting
+- `Reflection`: Agent-relative interpretations
+- `Target`: Recipients of effects
+
+**Key Relationships**:
+- `INVOLVES`: Event → Entity participation with role and salience
+- `PRECEDED`: Event → Event (causal chains)
+- `CONSOLIDATED_TO`: Event → Concept/Person (memory consolidation)
+- `PARTICIPATED_IN`: Person/Agent → Event
+- `HELD_AT`: Event → Place
+- `CATALYZED_BY`: Event → Catalyst
+- `HAD_EFFECT_ON`: Event → Effect → Target
+- `BOND`: Person ↔ Person (relationship tracking with evolution trajectory)
+
+**Properties**:
+- Events have `embedding` (Float32Array) for semantic vector search
+- Events track `emotional_valence` (-1.0 to 1.0) and `significance` (0.0 to 1.0)
+- Bonds maintain `evolution_trajectory` array for relationship history
+- All temporal data uses Neo4j DateTime type
+
+**Vector Index**:
+```cypher
+CREATE VECTOR INDEX event_embeddings IF NOT EXISTS
+FOR (e:Event)
+ON e.embedding
+OPTIONS {
+  indexConfig: {
+    `vector.dimensions`: 1536,
+    `vector.similarity_function`: 'cosine'
+  }
+}
+```
+
 ### Typical Development Workflow
 
+#### For MCP Server Development (Current Focus)
+1. **Tool design**: Define MCP tool schemas in `ListToolsRequestSchema` handler
+2. **Vector indexes**: Ensure vector index exists for semantic search (`setup-vector-index.mjs`)
+3. **Context creation**: Initialize clients and create context object at server startup
+4. **Handler implementation**: Write handlers that receive `(args, startTime, context)` signature
+5. **Destructure dependencies**: Extract needed services from context (`const { driver, openai } = context`)
+6. **Test locally**: Use `node hippocampal-mcp-server.mjs` or integration with Claude Desktop
+7. **Session cleanup**: Always close sessions in `finally` blocks
+
+#### For Traditional Neo4j/GraphQL Development
 1. **Schema design**: Define GraphQL `typeDefs` with `@node`, `@relationship`, etc.
-2. **Constraints first**: Run constraint/index creation (see `setup-schema.mjs`)
-3. **Server setup**: Initialize `Neo4jGraphQL` + `ApolloServer` (see `neo4j-setup.mjs`)
-4. **Test connection**: Validate with simple query (`neo4j-test.mjs` pattern)
+2. **Constraints first**: Run constraint/index creation (see `archive/setup-schema.mjs`)
+3. **Server setup**: Initialize `Neo4jGraphQL` + `ApolloServer` (see `archive/neo4j-setup.mjs`)
+4. **Test connection**: Validate with simple query (`test-connection.mjs` pattern)
 5. **Data import**: Batch with `UNWIND`, use transactions for consistency
 6. **Query optimization**: Add indexes based on query patterns, monitor performance
 
