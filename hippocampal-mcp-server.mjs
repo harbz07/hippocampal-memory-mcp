@@ -23,7 +23,10 @@ import OpenAI from 'openai';
 import { randomUUID } from 'crypto';
 import { hippocampusTools, handleWriteEvent, handleWriteReflection, handleSearchEvents } from './hippocampus-extension.mjs';
 
-// Environment validation
+// ============================================================================
+// ENVIRONMENT VALIDATION
+// ============================================================================
+
 const { NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, OPENAI_API_KEY } = process.env;
 
 if (!NEO4J_URI || !NEO4J_USER || !NEO4J_PASSWORD) {
@@ -36,20 +39,30 @@ if (!OPENAI_API_KEY) {
   process.exit(1);
 }
 
-// Initialize clients
+// ============================================================================
+// CLIENT INITIALIZATION & CONTEXT CREATION
+// ============================================================================
+
 const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
-// Embedding generation helper
-async function generateEmbedding(text) {
-  const response = await openai.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: text,
-  });
-  return response.data[0].embedding;
-}
+// Create shared context object passed to all handlers
+const context = {
+  driver,
+  openai,
+  generateEmbedding: async (text) => {
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text,
+    });
+    return response.data[0].embedding;
+  },
+};
 
-// Initialize MCP server
+// ============================================================================
+// MCP SERVER INITIALIZATION
+// ============================================================================
+
 const server = new Server(
   {
     name: 'hippocampal-memory-server',
@@ -62,7 +75,10 @@ const server = new Server(
   }
 );
 
-// Tool definitions
+// ============================================================================
+// TOOL DEFINITIONS
+// ============================================================================
+
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
@@ -306,35 +322,40 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// Tool handlers
+// ============================================================================
+// REQUEST HANDLER (Tool Dispatcher)
+// ============================================================================
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const startTime = Date.now();
 
   try {
     switch (request.params.name) {
+      // Extension handlers - pass context
       case 'hippocampus_write_event':
-        return await handleWriteEvent(request.params.arguments, startTime, driver);
+        return await handleWriteEvent(request.params.arguments, startTime, context);
 
       case 'hippocampus_write_reflection':
-        return await handleWriteReflection(request.params.arguments, startTime, driver);
+        return await handleWriteReflection(request.params.arguments, startTime, context);
 
       case 'hippocampus_search_events':
-        return await handleSearchEvents(request.params.arguments, startTime, driver, openai);
+        return await handleSearchEvents(request.params.arguments, startTime, context);
 
+      // Local handlers - pass context
       case 'encode_memory':
-        return await handleEncodeMemory(request.params.arguments, startTime);
+        return await handleEncodeMemory(request.params.arguments, startTime, context);
 
       case 'recall_memory':
-        return await handleRecallMemory(request.params.arguments, startTime);
+        return await handleRecallMemory(request.params.arguments, startTime, context);
 
       case 'mutate_graph':
-        return await handleMutateGraph(request.params.arguments, startTime);
+        return await handleMutateGraph(request.params.arguments, startTime, context);
 
       case 'evolve_bond':
-        return await handleEvolveBond(request.params.arguments, startTime);
+        return await handleEvolveBond(request.params.arguments, startTime, context);
 
       case 'query_graph':
-        return await handleQueryGraph(request.params.arguments, startTime);
+        return await handleQueryGraph(request.params.arguments, startTime, context);
 
       default:
         throw new Error(`Unknown tool: ${request.params.name}`);
@@ -357,9 +378,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Handler implementations
+// ============================================================================
+// LOCAL HANDLER IMPLEMENTATIONS
+// ============================================================================
 
-async function handleEncodeMemory(args, startTime) {
+async function handleEncodeMemory(args, startTime, context) {
+  const { driver, generateEmbedding } = context;
   const session = driver.session();
   const tx = session.beginTransaction();
 
@@ -386,7 +410,7 @@ async function handleEncodeMemory(args, startTime) {
     const embedding = await generateEmbedding(embeddingText);
 
     // Create Event node
-    const createEventResult = await tx.run(
+    await tx.run(
       `
       CREATE (e:Event {
         id: $id,
@@ -531,7 +555,8 @@ async function handleEncodeMemory(args, startTime) {
   }
 }
 
-async function handleRecallMemory(args, startTime) {
+async function handleRecallMemory(args, startTime, context) {
+  const { driver, generateEmbedding } = context;
   const session = driver.session();
 
   try {
@@ -550,17 +575,14 @@ async function handleRecallMemory(args, startTime) {
     let params = { limit };
 
     if (query) {
-      // Generate embedding for semantic search
       const queryEmbedding = await generateEmbedding(query);
       params.queryEmbedding = queryEmbedding;
 
-      // Use vector similarity search
       cypherQuery = `
         CALL db.index.vector.queryNodes('event_embeddings', $limit * 2, $queryEmbedding)
         YIELD node AS e, score
       `;
     } else {
-      // No semantic search, just filter
       cypherQuery = `
         MATCH (e:Event)
         WITH e, 0.5 AS score
@@ -605,7 +627,6 @@ async function handleRecallMemory(args, startTime) {
       cypherQuery += `\nWHERE ${whereClauses.join(' AND ')}`;
     }
 
-    // Calculate final score and return results
     cypherQuery += `
       WITH e, score, (score * 0.7 + e.significance * 0.3) AS final_score
     `;
@@ -678,7 +699,8 @@ async function handleRecallMemory(args, startTime) {
   }
 }
 
-async function handleMutateGraph(args, startTime) {
+async function handleMutateGraph(args, startTime, context) {
+  const { driver } = context;
   const session = driver.session();
 
   try {
@@ -717,7 +739,8 @@ async function handleMutateGraph(args, startTime) {
   }
 }
 
-async function handleEvolveBond(args, startTime) {
+async function handleEvolveBond(args, startTime, context) {
+  const { driver } = context;
   const session = driver.session();
 
   try {
@@ -808,7 +831,8 @@ async function handleEvolveBond(args, startTime) {
   }
 }
 
-async function handleQueryGraph(args, startTime) {
+async function handleQueryGraph(args, startTime, context) {
+  const { driver } = context;
   const session = driver.session();
 
   try {
@@ -838,7 +862,10 @@ async function handleQueryGraph(args, startTime) {
   }
 }
 
-// Server lifecycle
+// ============================================================================
+// SERVER LIFECYCLE
+// ============================================================================
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);

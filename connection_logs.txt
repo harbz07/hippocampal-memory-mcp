@@ -1,0 +1,2 @@
+OIDC/OAuth# [2026-01-01T02:27:01.569Z] 'warn' List of discovered SSO providers was empty
+OIDC/OAuth# [2026-01-01T02:27:01.569Z] 'log' None of the SSO providers found at http://127.0.0.1:7687 were valid

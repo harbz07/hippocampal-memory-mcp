@@ -214,9 +214,12 @@ export const hippocampusTools = [
   },
 ];
 
-// Handler implementations
+// ============================================================================
+// HANDLER IMPLEMENTATIONS
+// ============================================================================
 
-export async function handleWriteEvent(args, startTime, driver) {
+export async function handleWriteEvent(args, startTime, context) {
+  const { driver } = context;
   const session = driver.session();
   const tx = session.beginTransaction();
 
@@ -224,7 +227,7 @@ export async function handleWriteEvent(args, startTime, driver) {
     const { event } = args;
     
     // Generate event ID if not provided
-    const eventId = event.id || `event-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const eventId = event.id || `event-${Date.now()}-${crypto.randomUUID().toString(36).substring(7)}`;
     const happenedAt = event.happened_at || new Date().toISOString();
     
     // Create Event node
@@ -259,27 +262,26 @@ export async function handleWriteEvent(args, startTime, driver) {
 
     // WHO Block - Participants
     if (event.who) {
-      for (const participant of event.who) {
-        if (participant.type === 'person') {
-          await tx.run(
-            `
-            MATCH (e:Event {id: $eventId})
-            MERGE (p:Person {name: $name})
-            MERGE (p)-[:PARTICIPATED_IN]->(e)
-            `,
-            { eventId, name: participant.id }
-          );
-        } else if (participant.type === 'agent') {
-          await tx.run(
-            `
-            MATCH (e:Event {id: $eventId})
-            MERGE (a:Agent {id: $agentId})
-            MERGE (a)-[:PARTICIPATED_IN]->(e)
-            `,
-            { eventId, agentId: participant.id }
-          );
+      await tx.run(
+        `
+        MATCH (e:Event {id: $eventId})
+        WITH e, $participants AS participants
+        // Handle person participants
+        WITH e, [p IN participants WHERE p.type = 'person'] AS persons,
+             [p IN participants WHERE p.type = 'agent'] AS agents
+        UNWIND persons AS participant
+        MERGE (p:Person {name: participant.id})
+        MERGE (p)-[:PARTICIPATED_IN]->(e)
+        WITH e, agents
+        UNWIND agents AS participant
+        MERGE (a:Agent {id: participant.id})
+        MERGE (a)-[:PARTICIPATED_IN]->(e)
+        `,
+        {
+          eventId,
+          participants: event.who,
         }
-      }
+      );
     }
 
     // WHY Block - Catalysts
@@ -393,7 +395,8 @@ export async function handleWriteEvent(args, startTime, driver) {
   }
 }
 
-export async function handleWriteReflection(args, startTime, driver) {
+export async function handleWriteReflection(args, startTime, context) {
+  const { driver } = context;
   const session = driver.session();
 
   try {
@@ -412,7 +415,7 @@ export async function handleWriteReflection(args, startTime, driver) {
       
       WITH e, a, 
            [$agentId] + collect(DISTINCT t.id) AS who_context,
-           p.name AS where_context,
+           [$agentId] + coalesce(collect(DISTINCT t.id), []) AS who_context,
            collect(DISTINCT c.description) AS how_context
       
       CREATE (ref:Reflection {
@@ -469,7 +472,8 @@ export async function handleWriteReflection(args, startTime, driver) {
   }
 }
 
-export async function handleSearchEvents(args, startTime, driver, openai) {
+export async function handleSearchEvents(args, startTime, context) {
+  const { driver } = context;
   const session = driver.session();
 
   try {

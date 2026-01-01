@@ -53,7 +53,7 @@ Open another PowerShell and update your `.env`:
 ```
 NEO4J_URI=neo4j://neo4j.basecampgrounds.com:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=Fatboy$muckers1
+NEO4J_PASSWORD='NEO4J_PASSWORD'
 OPENAI_API_KEY=sk-proj-...
 ```
 
